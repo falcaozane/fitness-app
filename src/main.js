@@ -1,128 +1,137 @@
 import { ExerciseCoach } from './exerciseLogic.js';
 import { VoiceEngine } from './voiceEngine.js';
 
-// Initialize our Modules
+// 1. Initialize Modules
 const coach = new ExerciseCoach();
 const voice = new VoiceEngine();
 
-// DOM Elements
+// 2. DOM Elements
 const video = document.getElementById('video');
 const canvas = document.getElementById('output_canvas');
 const ctx = canvas.getContext('2d');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const exerciseSelect = document.getElementById('exerciseSelect');
-const repDisplay = document.getElementById('repCount');
 
 let camera = null;
 
-// 1. MediaPipe Pose Setup
+// 3. MediaPipe Pose Setup
 const pose = new Pose({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
 });
 
 pose.setOptions({
-    modelComplexity: 1,
-    smoothLandmarks: true,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
+  modelComplexity: 1,
+  smoothLandmarks: true,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
 });
 
-// 2. Detection Logic
+// 4. The Detection Loop (Logic & UI)
 pose.onResults((results) => {
-    if (!results.poseLandmarks) return;
+  if (!results.poseLandmarks) return;
 
-    // Adjust canvas to match video stream dimensions
-    if (canvas.width !== video.videoWidth) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-    }
+  // Sync canvas size to video stream
+  if (canvas.width !== video.videoWidth) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+  }
 
-    // --- RENDER ---
-    ctx.save();
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-    
-    // Visual feedback (Skeletal overlay)
-    drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#10b981', lineWidth: 4 });
-    drawLandmarks(ctx, results.poseLandmarks, { color: '#ffffff', lineWidth: 2, radius: 4 });
-    ctx.restore();
+  // --- RENDER SKELETON ---
+  ctx.save();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+  
+  // Custom colors matching your PRO theme
+  drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { color: "#00ffcc", lineWidth: 3 });
+  drawLandmarks(ctx, results.poseLandmarks, { color: "#ff2d55", lineWidth: 1 });
+  ctx.restore();
 
-    // --- BUSINESS LOGIC ---
-    const currentExercise = exerciseSelect.value;
-    const prevReps = coach.reps;
-    
-    // Process angles and counting via the Coach module
-    const stats = coach.processPose(results.poseLandmarks, currentExercise);
+  // --- CALCULATE PROGRESS ---
+  const currentExercise = exerciseSelect.value;
+  const prevReps = coach.reps;
+  
+  // This calls the logic that uses your EXACT OG angles and thresholds
+  const stats = coach.processPose(results.poseLandmarks, currentExercise);
 
-    // Rep Counting Voice Feedback
-    if (stats.reps > prevReps) {
-        voice.speak(stats.reps.toString());
-    }
+  // VOICE FEEDBACK: Call out the number on a successful rep
+  if (stats.reps > prevReps) {
+    voice.speak(stats.reps.toString());
+  }
 
-    // UI Updates
-    updateDashboard(stats);
+  // --- UPDATE DASHBOARD ---
+  updateUI(stats);
 });
 
-// 3. UI Helper
-function updateDashboard(stats) {
-    repDisplay.innerText = stats.reps;
-    document.getElementById('stat-knee').innerText = `${Math.round(stats.knee)}°`;
-    document.getElementById('stat-hip').innerText = `${Math.round(stats.hip)}°`;
-    document.getElementById('stat-arm').innerText = `${Math.round(stats.arm)}°`;
-    
-    const stateEl = document.getElementById('stat-state');
-    stateEl.innerText = stats.state.toUpperCase();
-    stateEl.style.color = stats.state === 'down' ? '#fbbf24' : '#10b981'; // Yellow for down, Green for up
+function updateUI(stats) {
+  // Main Rep Counter
+  document.getElementById('repCount').innerText = stats.reps;
+  
+  // Detailed Metrics (Matching your OG display)
+  document.getElementById('stat-knee').innerText = `${stats.kneeAngle.toFixed(0)}°`;
+  document.getElementById('stat-hip').innerText = `${stats.hipAngle.toFixed(0)}°`;
+  document.getElementById('stat-arm').innerText = `${stats.handAngle.toFixed(0)}°`;
+  
+  // These map to the extra boxes in your PRO UI
+  if(document.getElementById('stat-leg')) document.getElementById('stat-leg').innerText = `${stats.legAngle.toFixed(0)}°`;
+  if(document.getElementById('stat-chest')) document.getElementById('stat-chest').innerText = `${stats.chestAngle.toFixed(0)}°`;
+  if(document.getElementById('stat-abs')) document.getElementById('stat-abs').innerText = `${stats.absAngle.toFixed(0)}°`;
+  if(document.getElementById('stat-neck')) document.getElementById('stat-neck').innerText = `${stats.neckAngle.toFixed(0)}°`;
+
+  // Visual State Indicator
+  const stateEl = document.getElementById('stat-state');
+  stateEl.innerText = stats.state.toUpperCase();
+  stateEl.style.color = stats.state === "down" ? "#fbbf24" : "#10b981"; 
 }
 
-// 4. Session Controls
+// 5. App Controls
 async function startWorkout() {
-    coach.reset();
-    voice.speak("Let's get to work!");
-    voice.startListening();
+  coach.reset();
+  voice.speak("Let's get to work!");
+  voice.startListening();
 
-    startBtn.classList.add('hidden');
-    stopBtn.classList.remove('hidden');
+  startBtn.classList.add('hidden');
+  stopBtn.classList.remove('hidden');
 
-    camera = new Camera(video, {
-        onFrame: async () => {
-            await pose.send({ image: video });
-        },
-        width: 640,
-        height: 480
-    });
-    
-    try {
-        await camera.start();
-    } catch (err) {
-        alert("Camera error. Please ensure permissions are granted.");
-    }
+  camera = new Camera(video, {
+    onFrame: async () => {
+      await pose.send({ image: video });
+    },
+    width: 640,
+    height: 480
+  });
+  
+  try {
+    await camera.start();
+  } catch (err) {
+    console.error("Camera failed:", err);
+    alert("Camera access is required for AI coaching.");
+  }
 }
 
 function stopWorkout() {
-    if (camera) {
-        camera.stop();
-        camera = null;
-    }
-    startBtn.classList.remove('hidden');
-    stopBtn.classList.add('hidden');
+  if (camera) {
+    camera.stop();
+    camera = null;
+  }
+  startBtn.classList.remove('hidden');
+  stopBtn.classList.add('hidden');
 }
 
-// 5. Voice Interaction Listeners
-// These listen for custom events dispatched from voiceEngine.js
+// 6. Voice Command Listeners
+// These respond to the VoiceEngine's interpretations
 window.addEventListener('voice-stop-request', () => {
-    // This handles "not possible" or "stop workout"
-    voice.speak(`Alright, don't hurt yourself. You've already done ${coach.reps} reps!`);
-    stopWorkout();
+  // Handles "Not possible" or "I can't do more"
+  voice.speak(`Alright, don't hurt yourself. You've already done ${coach.reps} reps!`);
+  stopWorkout();
 });
 
 window.addEventListener('reset-workout', () => {
-    coach.reset();
-    repDisplay.innerText = "0";
-    voice.speak("Counter reset to zero.");
+  coach.reset();
+  document.getElementById('repCount').innerText = "0";
+  voice.speak("Counter reset to zero.");
 });
 
-// 6. Global Event Listeners
+// 7. Global Listeners
 startBtn.addEventListener('click', startWorkout);
 stopBtn.addEventListener('click', stopWorkout);

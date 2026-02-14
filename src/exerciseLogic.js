@@ -1,60 +1,72 @@
 export class ExerciseCoach {
     constructor() {
         this.reps = 0;
-        this.state = "up"; // "up" or "down"
+        this.state = "up"; // Matches your initial state
     }
 
-    // Helper to calculate angle between 3 points
-    calculateAngle(p1, p2, p3) {
-        const radians = Math.atan2(p3.y - p2.y, p3.x - p2.x) - Math.atan2(p1.y - p2.y, p1.x - p2.x);
-        let angle = Math.abs((radians * 180.0) / Math.PI);
-        if (angle > 180.0) angle = 360 - angle;
-        return angle;
+    // Matches your OG angle function
+    calculateAngle(a, b, c) {
+        const ab = { x: a.x - b.x, y: a.y - b.y };
+        const cb = { x: c.x - b.x, y: c.y - b.y };
+        const dot = ab.x * cb.x + ab.y * cb.y;
+        const mag = Math.hypot(ab.x, ab.y) * Math.hypot(cb.x, cb.y);
+        if (mag === 0) return 0;
+        return Math.acos(dot / mag) * 180 / Math.PI;
     }
 
-    processPose(landmarks, exercise) {
-        // Landmarks: 12: shoulder, 14: elbow, 16: wrist, 24: hip, 26: knee, 28: ankle
+    // Matches your OG verticalAngle function
+    calculateVerticalAngle(a, b) {
+        const seg = { x: a.x - b.x, y: a.y - b.y };
+        const vertical = { x: 0, y: -1 };
+        const dot = seg.x * vertical.x + seg.y * vertical.y;
+        const mag = Math.hypot(seg.x, seg.y);
+        if (mag === 0) return 0;
+        return Math.acos(dot / mag) * 180 / Math.PI;
+    }
+
+    processPose(lm, exercise) {
+        // Mapping landmarks to your OG variables
+        const shoulder = lm[12];
+        const elbow = lm[14];
+        const wrist = lm[16];
+        const hip = lm[24];
+        const knee = lm[26];
+        const ankle = lm[28];
+        const nose = lm[0];
+
         const angles = {
-            knee: this.calculateAngle(landmarks[24], landmarks[26], landmarks[28]),
-            hip: this.calculateAngle(landmarks[12], landmarks[24], landmarks[26]),
-            arm: this.calculateAngle(landmarks[12], landmarks[14], landmarks[16])
+            kneeAngle: this.calculateAngle(hip, knee, ankle),
+            hipAngle: this.calculateAngle(shoulder, hip, knee),
+            legAngle: this.calculateVerticalAngle(ankle, hip),
+            chestAngle: this.calculateVerticalAngle(shoulder, hip),
+            absAngle: this.calculateVerticalAngle(hip, shoulder),
+            handAngle: this.calculateAngle(shoulder, elbow, wrist),
+            neckAngle: this.calculateVerticalAngle(nose, shoulder)
         };
 
-        if (exercise === 'squat') {
-            this.handleSquatLogic(angles);
-        } else if (exercise === 'pushup') {
-            this.handlePushupLogic(angles);
+        // EXACT SQUAT LOGIC from your OG code
+        if (exercise === "squat") {
+            if (angles.kneeAngle > 165 && angles.hipAngle > 130 && this.state === "up") {
+                this.state = "down";
+            }
+            if (angles.kneeAngle < 95 && angles.hipAngle < 80 && this.state === "down") {
+                this.state = "up";
+                this.reps++;
+            }
+        }
+
+        // EXACT PUSH-UP LOGIC from your OG code
+        if (exercise === "pushup") {
+            if (angles.handAngle > 160 && this.state === "up") {
+                this.state = "down";
+            }
+            if (angles.handAngle < 90 && this.state === "down") {
+                this.state = "up";
+                this.reps++;
+            }
         }
 
         return { ...angles, reps: this.reps, state: this.state };
-    }
-
-    handleSquatLogic(angles) {
-        // Squat: Go down below 90, back up above 160
-        if (angles.knee < 95 && this.state === "up") {
-            this.state = "down";
-        }
-        if (angles.knee > 160 && this.state === "down") {
-            this.state = "up";
-            this.reps++;
-            this.playDing();
-        }
-    }
-
-    handlePushupLogic(angles) {
-        // Pushup: Arm angle goes from 160+ (up) to < 90 (down)
-        if (angles.arm < 90 && this.state === "up") {
-            this.state = "down";
-        }
-        if (angles.arm > 160 && this.state === "down") {
-            this.state = "up";
-            this.reps++;
-            this.playDing();
-        }
-    }
-
-    playDing() {
-        // Optional: Add a simple beep audio here
     }
 
     reset() {
